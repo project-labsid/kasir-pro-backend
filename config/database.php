@@ -1,184 +1,152 @@
 <?php
+/**
+ * Database Configuration & Connection
+ */
 
-use Illuminate\Support\Str;
-use Pdo\Mysql;
+require_once __DIR__ . '/constants.php';
 
-return [
+class Database {
+    private static $instance = null;
+    private $pdo = null;
+    private $errors = [];
 
-    /*
-    |--------------------------------------------------------------------------
-    | Default Database Connection Name
-    |--------------------------------------------------------------------------
-    |
-    | Here you may specify which of the database connections below you wish
-    | to use as your default connection for database operations. This is
-    | the connection which will be utilized unless another connection
-    | is explicitly specified when you execute a query / statement.
-    |
-    */
+    /**
+     * Get database instance (Singleton)
+     */
+    public static function getInstance() {
+        if (self::$instance === null) {
+            self::$instance = new self();
+        }
+        return self::$instance;
+    }
 
-    'default' => env('DB_CONNECTION', 'sqlite'),
+    /**
+     * Connect to database
+     */
+    private function __construct() {
+        try {
+            $dsn = sprintf(
+                'mysql:host=%s;port=%s;dbname=%s;charset=%s',
+                DB_HOST,
+                DB_PORT,
+                DB_NAME,
+                DB_CHARSET
+            );
 
-    /*
-    |--------------------------------------------------------------------------
-    | Database Connections
-    |--------------------------------------------------------------------------
-    |
-    | Below are all of the database connections defined for your application.
-    | An example configuration is provided for each database system which
-    | is supported by Laravel. You're free to add / remove connections.
-    |
-    */
+            $this->pdo = new PDO(
+                $dsn,
+                DB_USER,
+                DB_PASS,
+                [
+                    PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                    PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+                    PDO::ATTR_EMULATE_PREPARES => false,
+                    PDO::MYSQL_ATTR_INIT_COMMAND => "SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci"
+                ]
+            );
+        } catch (PDOException $e) {
+            $this->logError($e->getMessage());
+            die('Database connection failed: ' . $e->getMessage());
+        }
+    }
 
-    'connections' => [
+    /**
+     * Get PDO instance
+     */
+    public function getPDO() {
+        return $this->pdo;
+    }
 
-        'sqlite' => [
-            'driver' => 'sqlite',
-            'url' => env('DB_URL'),
-            'database' => env('DB_DATABASE', database_path('database.sqlite')),
-            'prefix' => '',
-            'foreign_key_constraints' => env('DB_FOREIGN_KEYS', true),
-            'busy_timeout' => null,
-            'journal_mode' => null,
-            'synchronous' => null,
-            'transaction_mode' => 'DEFERRED',
-        ],
+    /**
+     * Execute query
+     */
+    public function execute($query, $params = []) {
+        try {
+            $stmt = $this->pdo->prepare($query);
+            $stmt->execute($params);
+            return $stmt;
+        } catch (PDOException $e) {
+            $this->logError($e->getMessage());
+            throw $e;
+        }
+    }
 
-        'mysql' => [
-            'driver' => 'mysql',
-            'url' => env('DB_URL'),
-            'host' => env('DB_HOST', '127.0.0.1'),
-            'port' => env('DB_PORT', '3306'),
-            'database' => env('DB_DATABASE', 'laravel'),
-            'username' => env('DB_USERNAME', 'root'),
-            'password' => env('DB_PASSWORD', ''),
-            'unix_socket' => env('DB_SOCKET', ''),
-            'charset' => env('DB_CHARSET', 'utf8mb4'),
-            'collation' => env('DB_COLLATION', 'utf8mb4_unicode_ci'),
-            'prefix' => '',
-            'prefix_indexes' => true,
-            'strict' => true,
-            'engine' => null,
-            'options' => extension_loaded('pdo_mysql') ? array_filter([
-                Mysql::ATTR_SSL_CA => env('MYSQL_ATTR_SSL_CA'),
-            ]) : [],
-        ],
+    /**
+     * Fetch single row
+     */
+    public function fetchOne($query, $params = []) {
+        $stmt = $this->execute($query, $params);
+        return $stmt->fetch();
+    }
 
-        'mariadb' => [
-            'driver' => 'mariadb',
-            'url' => env('DB_URL'),
-            'host' => env('DB_HOST', '127.0.0.1'),
-            'port' => env('DB_PORT', '3306'),
-            'database' => env('DB_DATABASE', 'laravel'),
-            'username' => env('DB_USERNAME', 'root'),
-            'password' => env('DB_PASSWORD', ''),
-            'unix_socket' => env('DB_SOCKET', ''),
-            'charset' => env('DB_CHARSET', 'utf8mb4'),
-            'collation' => env('DB_COLLATION', 'utf8mb4_unicode_ci'),
-            'prefix' => '',
-            'prefix_indexes' => true,
-            'strict' => true,
-            'engine' => null,
-            'options' => extension_loaded('pdo_mysql') ? array_filter([
-                Mysql::ATTR_SSL_CA => env('MYSQL_ATTR_SSL_CA'),
-            ]) : [],
-        ],
+    /**
+     * Fetch all rows
+     */
+    public function fetchAll($query, $params = []) {
+        $stmt = $this->execute($query, $params);
+        return $stmt->fetchAll();
+    }
 
-        'pgsql' => [
-            'driver' => 'pgsql',
-            'url' => env('DB_URL'),
-            'host' => env('DB_HOST', '127.0.0.1'),
-            'port' => env('DB_PORT', '5432'),
-            'database' => env('DB_DATABASE', 'laravel'),
-            'username' => env('DB_USERNAME', 'root'),
-            'password' => env('DB_PASSWORD', ''),
-            'charset' => env('DB_CHARSET', 'utf8'),
-            'prefix' => '',
-            'prefix_indexes' => true,
-            'search_path' => 'public',
-            'sslmode' => env('DB_SSLMODE', 'prefer'),
-        ],
+    /**
+     * Insert and get last insert ID
+     */
+    public function insert($query, $params = []) {
+        $this->execute($query, $params);
+        return $this->pdo->lastInsertId();
+    }
 
-        'sqlsrv' => [
-            'driver' => 'sqlsrv',
-            'url' => env('DB_URL'),
-            'host' => env('DB_HOST', 'localhost'),
-            'port' => env('DB_PORT', '1433'),
-            'database' => env('DB_DATABASE', 'laravel'),
-            'username' => env('DB_USERNAME', 'root'),
-            'password' => env('DB_PASSWORD', ''),
-            'charset' => env('DB_CHARSET', 'utf8'),
-            'prefix' => '',
-            'prefix_indexes' => true,
-            // 'encrypt' => env('DB_ENCRYPT', 'yes'),
-            // 'trust_server_certificate' => env('DB_TRUST_SERVER_CERTIFICATE', 'false'),
-        ],
+    /**
+     * Get row count
+     */
+    public function rowCount($query, $params = []) {
+        $stmt = $this->execute($query, $params);
+        return $stmt->rowCount();
+    }
 
-    ],
+    /**
+     * Begin transaction
+     */
+    public function beginTransaction() {
+        return $this->pdo->beginTransaction();
+    }
 
-    /*
-    |--------------------------------------------------------------------------
-    | Migration Repository Table
-    |--------------------------------------------------------------------------
-    |
-    | This table keeps track of all the migrations that have already run for
-    | your application. Using this information, we can determine which of
-    | the migrations on disk haven't actually been run on the database.
-    |
-    */
+    /**
+     * Commit transaction
+     */
+    public function commit() {
+        return $this->pdo->commit();
+    }
 
-    'migrations' => [
-        'table' => 'migrations',
-        'update_date_on_publish' => true,
-    ],
+    /**
+     * Rollback transaction
+     */
+    public function rollback() {
+        return $this->pdo->rollback();
+    }
 
-    /*
-    |--------------------------------------------------------------------------
-    | Redis Databases
-    |--------------------------------------------------------------------------
-    |
-    | Redis is an open source, fast, and advanced key-value store that also
-    | provides a richer body of commands than a typical key-value system
-    | such as Memcached. You may define your connection settings here.
-    |
-    */
+    /**
+     * Log errors
+     */
+    private function logError($message) {
+        $logFile = LOG_PATH . '/database.log';
+        @mkdir(dirname($logFile), 0755, true);
+        error_log('[' . date('Y-m-d H:i:s') . '] ' . $message . PHP_EOL, 3, $logFile);
+    }
 
-    'redis' => [
+    /**
+     * Prevent cloning
+     */
+    private function __clone() {}
 
-        'client' => env('REDIS_CLIENT', 'phpredis'),
+    /**
+     * Prevent unserialization
+     */
+    public function __wakeup() {}
+}
 
-        'options' => [
-            'cluster' => env('REDIS_CLUSTER', 'redis'),
-            'prefix' => env('REDIS_PREFIX', Str::slug((string) env('APP_NAME', 'laravel')).'-database-'),
-            'persistent' => env('REDIS_PERSISTENT', false),
-        ],
-
-        'default' => [
-            'url' => env('REDIS_URL'),
-            'host' => env('REDIS_HOST', '127.0.0.1'),
-            'username' => env('REDIS_USERNAME'),
-            'password' => env('REDIS_PASSWORD'),
-            'port' => env('REDIS_PORT', '6379'),
-            'database' => env('REDIS_DB', '0'),
-            'max_retries' => env('REDIS_MAX_RETRIES', 3),
-            'backoff_algorithm' => env('REDIS_BACKOFF_ALGORITHM', 'decorrelated_jitter'),
-            'backoff_base' => env('REDIS_BACKOFF_BASE', 100),
-            'backoff_cap' => env('REDIS_BACKOFF_CAP', 1000),
-        ],
-
-        'cache' => [
-            'url' => env('REDIS_URL'),
-            'host' => env('REDIS_HOST', '127.0.0.1'),
-            'username' => env('REDIS_USERNAME'),
-            'password' => env('REDIS_PASSWORD'),
-            'port' => env('REDIS_PORT', '6379'),
-            'database' => env('REDIS_CACHE_DB', '1'),
-            'max_retries' => env('REDIS_MAX_RETRIES', 3),
-            'backoff_algorithm' => env('REDIS_BACKOFF_ALGORITHM', 'decorrelated_jitter'),
-            'backoff_base' => env('REDIS_BACKOFF_BASE', 100),
-            'backoff_cap' => env('REDIS_BACKOFF_CAP', 1000),
-        ],
-
-    ],
-
-];
+// Create alias for convenience
+if (!function_exists('db')) {
+    function db() {
+        return Database::getInstance()->getPDO();
+    }
+}
